@@ -3,3 +3,5 @@ Implementations of different algorithms in Machine learning and Deep Learning fo
 * http://colah.github.io/posts/2015-08-Backprop/
 * https://research.fb.com/facebook-ai-academy/ 
 * http://www.cs.cmu.edu/~ninamf/courses/601sp15/lectures.shtml
+* https://www.infoq.com/presentations/machine-learning-general-programming
+
