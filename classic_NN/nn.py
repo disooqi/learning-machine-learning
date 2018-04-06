@@ -4,11 +4,12 @@ import scipy.io
 class HiddenLayer:
     fff = True
     def __init__(self, n_units, n_in, activation='sigmoid', initializer='1', output_layer=False):
+
         self.n_units = n_units
 
         if activation == 'sigmoid':
             self.activation=self.sigmoid
-            self.dAdZ = self.segmoid_prime
+            self.dAdZ = self.sigmoid_prime
         elif activation == 'relu':
             self.activation = self.relu
             self.dAdZ = self.relu_prime
@@ -20,7 +21,7 @@ class HiddenLayer:
             self.dAdZ = self.leaky_relu_prime
 
         # multiplying W by a small number makes the learning fast
-        self.W = np.random.randn(n_in, n_units) * 0.01
+        self.W = np.random.randn(n_units, n_in) * 0.01
 
         self.b = np.zeros((n_units, 1))
 
@@ -34,7 +35,7 @@ class HiddenLayer:
         return 1 / (1 + np.exp(-Z))
 
     @classmethod
-    def segmoid_prime(cls, A):
+    def sigmoid_prime(cls, A):
         '''
         dAdZ
         '''
@@ -62,9 +63,13 @@ class HiddenLayer:
     @staticmethod
     def leaky_relu(Z, alpha=0.01):
         '''
-        alpha: Slope of the activation function at x < 0.
+        :param Z:
+        :param alpha: Slope of the activation function at x < 0.
+        :return:
+
         '''
-        return np.clip(Z, alpha * Z, Z)
+        #return np.clip(Z, alpha * Z, Z)
+        return np.where(Z < 0, alpha*Z, Z)
 
     @staticmethod
     def leaky_relu_prime(A, alpha=0.01):
@@ -98,38 +103,72 @@ class NN:
             # TODO: you should raise an error and message that says you need to delete existing output_layer
             pass
 
+    def _calculate_single_layer_gradients(self, dJdA, layer_cache, compute_dJdA_1 = True):
+        '''
+        :param dJdA:
+        :return: dJdA_1, dJdW, dJdb
+        '''
+        dAdZ = layer_cache.dAdZ(layer_cache.A)
+
+        # dz = da * g'(z) TODO: currently we pass A instead of Z, I guess it is much better to follow "A. Ng" and pass Z
+        dLdZ = dJdA * dAdZ
+
+        # dw = dz . a[l-1]
+        dZdW = layer_cache.A_l_1
+        dJdW = np.dot(dLdZ, dZdW.T) / self.X.shape[1]  # this is two steps in one line; getting dLdw and then dJdW
+        dJdb = np.sum(dLdZ, axis=1, keepdims=True) / self.X.shape[1]
+
+        if compute_dJdA_1:
+            # da[l-1] = w[l].T . dz[l]
+            dZdA_1 = layer_cache.W
+            dJdA_1 = np.dot(dZdA_1.T, dLdZ) / self.X.shape[1]  # this is two steps in one line; computing dLd(A-1) and then dJd(A-1)
+        else:
+            dJdA_1 = None
+        return dJdA_1, dJdW, dJdb
+
     def _calculate_gradients_and_update_weights(self, alpha):
         A = self.X
         for layer in self.layers:
-            layer.A_l_1 = A
-            Z = np.dot(layer.W.T, A) + layer.b
+            layer.A_l_1 = A   # this is A-1 from last loop step
+            Z = np.dot(layer.W, A) + layer.b
             A = layer.activation(Z)
             layer.A = A
 
         dLdA = -self.y / A + (1 - self.y) / (1 - A)
         previous = dLdA
-        for step, layer in enumerate(self.layers[::-1]):
-            dAdZ = layer.dAdZ(layer.A)
-            dZdW = layer.A_l_1
 
-            # dLdW = dLdA * dAdZ * dZdW
-            dLdZ = previous * dAdZ
-            dJdW = np.dot(dZdW, dLdZ.T) / self.X.shape[1]  # this is a two steps in one line; getting dLdw and then dJdW
-            # dLdW = dLdA * dAdZ
-            dJdb = np.sum(dLdZ, axis=1, keepdims=True) / self.X.shape[1]
+        # To avoid the confusion: reversed() doesn't modify the list. reversed() doesn't make a copy of the list
+        # (otherwise it would require O(N) additional memory). If you need to modify the list use alist.reverse(); if
+        # you need a copy of the list in reversed order use alist[::-1]
+        for l, layer in zip(range(len(self.layers), 0, -1), reversed(self.layers)):
+            # dAdZ = layer.dAdZ(layer.A)
+            # dZdW = layer.A_l_1
+            #
+            # # dLdW = dLdA * dAdZ * dZdW
+            # dLdZ = previous * dAdZ
+            # dJdW = np.dot(dLdZ, dZdW.T) / self.X.shape[1]  # this is two steps in one line; getting dLdw and then dJdW
+            # # dLdW = dLdA * dAdZ
+            # dJdb = np.sum(dLdZ, axis=1, keepdims=True) / self.X.shape[1]
+            #
+            # dZdA_1 = layer.W
+
+
+            # if l > 1:
+            #     dJdA_1 = np.dot(dZdA_1.T, dLdZ) / self.X.shape[1]  # this is two steps in one line; getting dLd(A-1) and then dJd(A-1)
+            #     previous = dJdA_1
+
+            dJdA_1, dJdW, dJdb = self._calculate_single_layer_gradients(previous, layer, compute_dJdA_1=(l>1))
+            previous = dJdA_1
+
             layer.W -= alpha*dJdW
             layer.b -= alpha*dJdb
 
-            dZdA_1 = layer.W
-            # TODO don't do it for X
-            if step < len(self.layers)-1:
-                dJdA_1 = np.dot(dZdA_1, dLdZ) / self.X.shape[1]  # this is a two steps in one line; getting dLd(A-1) and then dJd(A-1)
-                previous = dJdA_1
+
 
     def accuracy(self):
         A = self.X
         for layer in self.layers:
-            Z = np.dot(layer.W.T, A) + layer.b
+            Z = np.dot(layer.W, A) + layer.b
             A = layer.activation(Z)
         else:
 
@@ -156,7 +195,7 @@ class NN:
     def cost(self):
         A = self.X
         for layer in self.layers:
-            Z = np.dot(layer.W.T, A) + layer.b
+            Z = np.dot(layer.W, A) + layer.b
             A = layer.activation(Z)
         else:
             loss_matrix = self.cross_entropy_loss(self.y, A)
@@ -174,18 +213,14 @@ if __name__ == '__main__':
     print('There are {1:} training examples, each individual example is represented using {0:} features'.format(
         *Xf.shape))
     nn01 = NN(Xf, yf)
-    # nn01.add_layer(250, activation='relu')
-    # nn01.add_layer(200, activation='relu')
-    # nn01.add_layer(100, activation='relu')
-    # nn01.add_layer(50, activation='relu')
-    # nn01.add_layer(110, activation='relu')
-    # nn01.add_layer(205, activation='relu')
-    # nn01.add_layer(390, activation='relu')
+    # nn01.add_layer(250, a activation='relu')
     # nn01.add_layer(531, activation='relu')
-    # nn01.add_layer(250, activation='tanh')
-    nn01.add_layer(95, activation='tanh')
-    nn01.add_layer(25, activation='tanh')
+    # nn01.add_layer(250, activation='leaky_relu')
+    # nn01.add_layer(500, activation='tanh')
+    # nn01.add_layer(200, activation='tanh')
+    # nn01.add_layer(95, activation='tanh')
+    nn01.add_layer(25, activation='leaky_relu')
 
     nn01.add_output_layer()
-    nn01.train(iterations=100, alpha=1)
+    nn01.train(iterations=10000, alpha=1)
     print(nn01.accuracy())
