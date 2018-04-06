@@ -103,28 +103,26 @@ class NN:
             # TODO: you should raise an error and message that says you need to delete existing output_layer
             pass
 
-    def _calculate_single_layer_gradients(self, dJdA, layer_cache, compute_dJdA_1 = True):
+    def _calculate_single_layer_gradients(self, dLdA, layer_cache, compute_dJdA_1 = True):
         '''
         :param dJdA:
         :return: dJdA_1, dJdW, dJdb
         '''
-        dAdZ = layer_cache.dAdZ(layer_cache.A)
-
         # dz = da * g'(z) TODO: currently we pass A instead of Z, I guess it is much better to follow "A. Ng" and pass Z
-        dLdZ = dJdA * dAdZ
+        dAdZ = layer_cache.dAdZ(layer_cache.A)
+        dLdZ = dLdA * dAdZ
 
         # dw = dz . a[l-1]
         dZdW = layer_cache.A_l_1
         dJdW = np.dot(dLdZ, dZdW.T) / self.X.shape[1]  # this is two steps in one line; getting dLdw and then dJdW
         dJdb = np.sum(dLdZ, axis=1, keepdims=True) / self.X.shape[1]
 
+        dLdA_1 = None
         if compute_dJdA_1:
             # da[l-1] = w[l].T . dz[l]
             dZdA_1 = layer_cache.W
-            dJdA_1 = np.dot(dZdA_1.T, dLdZ) / self.X.shape[1]  # this is two steps in one line; computing dLd(A-1) and then dJd(A-1)
-        else:
-            dJdA_1 = None
-        return dJdA_1, dJdW, dJdb
+            dLdA_1 = np.dot(dZdA_1.T, dLdZ) # computing dLd(A-1)
+        return dLdA_1, dJdW, dJdb
 
     def _calculate_gradients_and_update_weights(self, alpha):
         A = self.X
@@ -135,8 +133,6 @@ class NN:
             layer.A = A
 
         dLdA = -self.y / A + (1 - self.y) / (1 - A)
-        previous = dLdA
-
         # To avoid the confusion: reversed() doesn't modify the list. reversed() doesn't make a copy of the list
         # (otherwise it would require O(N) additional memory). If you need to modify the list use alist.reverse(); if
         # you need a copy of the list in reversed order use alist[::-1]
@@ -157,8 +153,7 @@ class NN:
             #     dJdA_1 = np.dot(dZdA_1.T, dLdZ) / self.X.shape[1]  # this is two steps in one line; getting dLd(A-1) and then dJd(A-1)
             #     previous = dJdA_1
 
-            dJdA_1, dJdW, dJdb = self._calculate_single_layer_gradients(previous, layer, compute_dJdA_1=(l>1))
-            previous = dJdA_1
+            dLdA, dJdW, dJdb = self._calculate_single_layer_gradients(dLdA, layer, compute_dJdA_1=(l>1))
 
             layer.W -= alpha*dJdW
             layer.b -= alpha*dJdb
@@ -219,7 +214,7 @@ if __name__ == '__main__':
     # nn01.add_layer(500, activation='tanh')
     # nn01.add_layer(200, activation='tanh')
     # nn01.add_layer(95, activation='tanh')
-    nn01.add_layer(25, activation='leaky_relu')
+    nn01.add_layer(50, activation='tanh')
 
     nn01.add_output_layer()
     nn01.train(iterations=10000, alpha=1)
