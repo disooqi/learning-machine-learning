@@ -67,8 +67,8 @@ class HiddenLayer:
         return np.clip(Z, alpha * Z, Z)
 
     @staticmethod
-    def leaky_relu_prime(Z, alpha):
-        return np.where(Z > 0, 1, alpha)
+    def leaky_relu_prime(A, alpha=0.01):
+        return np.where(A > 0, 1, alpha)
 
 class NN:
     def __init__(self, X, y):
@@ -138,7 +138,6 @@ class NN:
             res = np.equal(pred, y)
             return 100* np.sum(res)/y.size
 
-
     def train(self, alpha=0.01, iterations=1):
         print(self.cost())
         for i in range(iterations):
@@ -149,8 +148,6 @@ class NN:
 
         else:
             print(self.cost())
-
-
 
     @staticmethod
     def cross_entropy_loss(y, a):
@@ -186,7 +183,7 @@ if __name__ == '__main__':
     # nn01.add_layer(390, activation='relu')
     # nn01.add_layer(531, activation='relu')
     # nn01.add_layer(250, activation='tanh')
-    # nn01.add_layer(95, activation='tanh')
+    nn01.add_layer(95, activation='tanh')
     nn01.add_layer(25, activation='tanh')
 
     nn01.add_output_layer()
