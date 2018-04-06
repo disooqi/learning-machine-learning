@@ -1,5 +1,6 @@
 import numpy as np
 import scipy.io
+from scipy.special import expit, logit
 
 class HiddenLayer:
     fff = True
@@ -32,7 +33,9 @@ class HiddenLayer:
 
     @staticmethod
     def sigmoid(Z):
-        return 1 / (1 + np.exp(-Z))
+        # https://docs.scipy.org/doc/scipy/reference/generated /scipy.special.expit.html
+        # return 1 / (1 + np.exp(-Z))
+        return expit(np.clip(Z, -709, 36.73))
 
     @classmethod
     def sigmoid_prime(cls, A):
@@ -103,7 +106,7 @@ class NN:
             # TODO: you should raise an error and message that says you need to delete existing output_layer
             pass
 
-    def _calculate_single_layer_gradients(self, dLdA, layer_cache, compute_dJdA_1 = True):
+    def _calculate_single_layer_gradients(self, dLdA, layer_cache, compute_dJdA_1=True):
         '''
         :param dJdA:
         :return: dJdA_1, dJdW, dJdb
@@ -121,7 +124,7 @@ class NN:
         if compute_dJdA_1:
             # da[l-1] = w[l].T . dz[l]
             dZdA_1 = layer_cache.W
-            dLdA_1 = np.dot(dZdA_1.T, dLdZ) # computing dLd(A-1)
+            dLdA_1 = np.dot(dZdA_1.T, dLdZ)  # computing dLd(A-1)
         return dLdA_1, dJdW, dJdb
 
     def _calculate_gradients_and_update_weights(self, alpha):
@@ -132,7 +135,14 @@ class NN:
             A = layer.activation(Z)
             layer.A = A
 
-        dLdA = -self.y / A + (1 - self.y) / (1 - A)
+
+        with np.errstate(invalid='raise'):
+            try:
+                dLdA = -self.y / A + (1 - self.y) / (1 - A)
+            except FloatingPointError:
+                # print(Z[A==1], HiddenLayer.sigmoid(Z[A==1]))
+                # print(np.sum(np.equal(A, np.ones_like(A))))
+                raise
         # To avoid the confusion: reversed() doesn't modify the list. reversed() doesn't make a copy of the list
         # (otherwise it would require O(N) additional memory). If you need to modify the list use alist.reverse(); if
         # you need a copy of the list in reversed order use alist[::-1]
@@ -158,28 +168,12 @@ class NN:
             layer.W -= alpha*dJdW
             layer.b -= alpha*dJdb
 
-
-
-    def accuracy(self):
-        A = self.X
-        for layer in self.layers:
-            Z = np.dot(layer.W, A) + layer.b
-            A = layer.activation(Z)
-        else:
-
-            y = self.y.argmax(axis=0) + 1
-            pred = A.argmax(axis=0) + 1
-            res = np.equal(pred, y)
-            return 100* np.sum(res)/y.size
-
     def train(self, alpha=0.01, iterations=1):
         print(self.cost())
         for i in range(iterations):
             self._calculate_gradients_and_update_weights(alpha=alpha)
-            if i%10==0:
+            if i%100==0:
                 print(i, self.cost(), self.accuracy())
-
-
         else:
             print(self.cost())
 
@@ -198,6 +192,18 @@ class NN:
             return np.sum(sum_over_all_examples)/sum_over_all_examples.size
             # print(incidence_y.argmax(axis=0)+1)
 
+    def accuracy(self):
+        A = self.X
+        for layer in self.layers:
+            Z = np.dot(layer.W, A) + layer.b
+            A = layer.activation(Z)
+        else:
+
+            y = self.y.argmax(axis=0) + 1
+            pred = A.argmax(axis=0) + 1
+            res = np.equal(pred, y)
+            return 100 * np.sum(res)/y.size
+
 
 if __name__ == '__main__':
     handwritten_digits = scipy.io.loadmat("../data/ex3data1.mat")
@@ -214,7 +220,7 @@ if __name__ == '__main__':
     # nn01.add_layer(500, activation='tanh')
     # nn01.add_layer(200, activation='tanh')
     # nn01.add_layer(95, activation='tanh')
-    nn01.add_layer(50, activation='tanh')
+    nn01.add_layer(25, activation='leaky_relu')
 
     nn01.add_output_layer()
     nn01.train(iterations=10000, alpha=1)
