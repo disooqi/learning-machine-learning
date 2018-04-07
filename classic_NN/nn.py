@@ -34,8 +34,8 @@ class HiddenLayer:
     @staticmethod
     def sigmoid(Z):
         # https://docs.scipy.org/doc/scipy/reference/generated /scipy.special.expit.html
-        # return 1 / (1 + np.exp(-Z))
-        return expit(np.clip(Z, -709, 36.73))
+        return 1 / (1 + np.exp(-Z))
+        # return expit(np.clip(Z, -709, 36.73))
 
     @classmethod
     def sigmoid_prime(cls, A):
@@ -111,9 +111,13 @@ class NN:
         :param dJdA:
         :return: dJdA_1, dJdW, dJdb
         '''
-        # dz = da * g'(z) TODO: currently we pass A instead of Z, I guess it is much better to follow "A. Ng" and pass Z
+        # For the first iteration where loss is cross entropy and activation func of output layer
+        # is sigmoid, that could be shorten to,
+        # dZ[L] = A[L]-Y
+        # In general, you can compute dZ as follows
+        # dZ = dA * g'(Z) TODO: currently we pass A instead of Z, I guess it is much better to follow "A. Ng" and pass Z
         dAdZ = layer_cache.dAdZ(layer_cache.A)
-        dLdZ = dLdA * dAdZ
+        dLdZ = dLdA * dAdZ  # Element-wise product
 
         # dw = dz . a[l-1]
         dZdW = layer_cache.A_l_1
@@ -138,7 +142,7 @@ class NN:
 
         with np.errstate(invalid='raise'):
             try:
-                dLdA = -self.y / A + (1 - self.y) / (1 - A)
+                dLdA = -self.y/A + (1-self.y)/(1 - A)
             except FloatingPointError:
                 # print(Z[A==1], HiddenLayer.sigmoid(Z[A==1]))
                 # print(np.sum(np.equal(A, np.ones_like(A))))
@@ -223,5 +227,5 @@ if __name__ == '__main__':
     nn01.add_layer(25, activation='leaky_relu')
 
     nn01.add_output_layer()
-    nn01.train(iterations=10000, alpha=1)
+    nn01.train(iterations=10000, alpha=0.1)
     print(nn01.accuracy())
