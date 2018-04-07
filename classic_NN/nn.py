@@ -79,7 +79,11 @@ class HiddenLayer:
         return np.where(A > 0, 1, alpha)
 
 class NN:
-    def __init__(self, X, y):
+    def __init__(self, X, y, loss='cross_entropy'):
+        if loss == 'cross_entropy':
+            self.loss = self.cross_entropy_loss
+            self.activation_prime = self.cross_entropy_prime
+
         self.classes = np.unique(y)
         self.layers = list()
 
@@ -142,7 +146,7 @@ class NN:
 
         with np.errstate(invalid='raise'):
             try:
-                dLdA = -self.y/A + (1-self.y)/(1 - A)
+                dLdA = self.activation_prime(self.y, A)
             except FloatingPointError:
                 # print(Z[A==1], HiddenLayer.sigmoid(Z[A==1]))
                 # print(np.sum(np.equal(A, np.ones_like(A))))
@@ -185,13 +189,17 @@ class NN:
     def cross_entropy_loss(y, a):
         return -(y * np.log(a) + (1 - y) * np.log(1 - a))
 
+    @staticmethod
+    def cross_entropy_prime(y, a):
+        return -y/a + (1-y)/(1-a)
+
     def cost(self):
         A = self.X
         for layer in self.layers:
             Z = np.dot(layer.W, A) + layer.b
             A = layer.activation(Z)
         else:
-            loss_matrix = self.cross_entropy_loss(self.y, A)
+            loss_matrix = self.loss(self.y, A)
             sum_over_all_examples = np.sum(loss_matrix, axis=1)/loss_matrix.shape[1]
             return np.sum(sum_over_all_examples)/sum_over_all_examples.size
             # print(incidence_y.argmax(axis=0)+1)
@@ -217,7 +225,7 @@ if __name__ == '__main__':
 
     print('There are {1:} training examples, each individual example is represented using {0:} features'.format(
         *Xf.shape))
-    nn01 = NN(Xf, yf)
+    nn01 = NN(Xf, yf, loss='ff')
     # nn01.add_layer(250, a activation='relu')
     # nn01.add_layer(531, activation='relu')
     # nn01.add_layer(250, activation='leaky_relu')
