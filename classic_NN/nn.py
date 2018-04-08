@@ -196,6 +196,7 @@ class NN:
 
     @staticmethod
     def cross_entropy_loss(y, a):
+        # https://stats.stackexchange.com/questions/260505/machine-learning-should-i-use-a-categorical-cross-entropy-or-binary-cross-entro
         return -(y * np.log(a) + (1 - y) * np.log(1 - a))
 
     @staticmethod
