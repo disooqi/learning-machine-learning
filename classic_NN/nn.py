@@ -1,13 +1,14 @@
 import numpy as np
-from scipy.special import expit, logit
+# from scipy.special import expit, logit
 import time
 
 
 class HiddenLayer:
-    fff = True
-    def __init__(self, n_units, n_in, activation='sigmoid', initializer='1', output_layer=False):
+    def __init__(self, n_units, n_in, activation='sigmoid', initializer='1', output_layer=False, keep_prob=1):
 
         self.n_units = n_units
+        #  It means at every iteration you shut down each neurons of the layer with "1-keep_prob" probability.
+        self.keep_prob = keep_prob
 
         if activation == 'sigmoid':
             self.activation=self.sigmoid
@@ -98,16 +99,20 @@ class NN:
 
         self.y = incidence_y
 
-    def add_layer(self, n_units, activation='sigmoid', initializer='1', output_layer=False):
+    def add_layer(self, n_units, activation='sigmoid', initializer='1', dropout_keep_prob=1):
         if self.layers:
-            layer = HiddenLayer(n_units, self.layers[-1].n_units, activation=activation, initializer=initializer)
+            n_units_previous_layer = self.layers[-1].n_units
         else:
-            layer = HiddenLayer(n_units, self.X.shape[0], activation=activation, initializer=initializer)
+            n_units_previous_layer = self.X.shape[0]
+
+        layer = HiddenLayer(n_units, n_units_previous_layer, activation=activation, initializer=initializer,
+                            keep_prob=dropout_keep_prob)
+
         self.layers.append(layer)
 
     def add_output_layer(self, initializer='1'):
         if not self.layers[-1].output_layer:
-            self.add_layer(self.classes.size, activation='sigmoid', initializer=initializer, output_layer=True)
+            self.add_layer(self.classes.size, activation='sigmoid', initializer=initializer)
         else:
             # TODO: you should raise an error and message that says you need to delete existing output_layer
             pass
@@ -122,6 +127,11 @@ class NN:
         # dZ[L] = A[L]-Y
         # In general, you can compute dZ as follows
         # dZ = dA * g'(Z) TODO: currently we pass A instead of Z, I guess it is much better to follow "A. Ng" and pass Z
+
+        # During forward propagation, you had divided A1 by keep_prob. In backpropagation, you'll therefore have to
+        # divide dA1 by keep_prob again (the calculus interpretation is that if  A[1]A[1]  is scaled by keep_prob, then
+        # its derivative  dA[1]dA[1]  is also scaled by the same keep_prob).
+        dLdA = np.multiply(dLdA, layer_cache.D)/layer_cache.keep_prob
         dAdZ = layer_cache.dAdZ(layer_cache.A)
         dLdZ = dLdA * dAdZ  # Element-wise product
 
@@ -143,6 +153,12 @@ class NN:
             layer.A_l_1 = A   # this is A-1 from last loop step
             Z = np.dot(layer.W, A) + layer.b
             A = layer.activation(Z)
+
+            # NB! we don't not apply dropout to the input layer or output layer.
+            D = np.random.rand(*A.shape) <= layer.keep_prob  # dropout
+            A = np.multiply(A, D) / layer.keep_prob  # inverted dropout
+
+            layer.D = D
             layer.A = A
 
 
@@ -213,6 +229,7 @@ class NN:
             return np.sum(sum_over_all_examples)/sum_over_all_examples.size + self.regularization_term(lmbda=regularization_parameter)
 
     def accuracy(self, X, y):
+        # You only use dropout during training. Don't use dropout (randomly eliminate nodes) during test time.
         A = X
         for layer in self.layers:
             Z = np.dot(layer.W, A) + layer.b
