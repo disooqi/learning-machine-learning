@@ -90,6 +90,7 @@ class NN:
         self.layers = list()
 
         self.X = X
+        self.m = X.shape[1]
         # self.y = to_categorical(y)
 
         incidence_y = np.zeros((self.classes.size, y.size))
@@ -126,8 +127,8 @@ class NN:
 
         # dw = dz . a[l-1]
         dZdW = layer_cache.A_l_1
-        dJdW = np.dot(dLdZ, dZdW.T) / self.X.shape[1]  # this is two steps in one line; getting dLdw and then dJdW
-        dJdb = np.sum(dLdZ, axis=1, keepdims=True) / self.X.shape[1]
+        dJdW = np.dot(dLdZ, dZdW.T) / self.m  # this is two steps in one line; getting dLdw and then dJdW
+        dJdb = np.sum(dLdZ, axis=1, keepdims=True) / self.m
 
         dLdA_1 = None
         if compute_dJdA_1:
@@ -136,7 +137,7 @@ class NN:
             dLdA_1 = np.dot(dZdA_1.T, dLdZ)  # computing dLd(A-1)
         return dLdA_1, dJdW, dJdb
 
-    def _calculate_gradients_and_update_weights(self, alpha):
+    def _calculate_gradients_and_update_weights(self, alpha, lmbda):
         A = self.X
         for layer in self.layers:
             layer.A_l_1 = A   # this is A-1 from last loop step
@@ -156,34 +157,23 @@ class NN:
         # (otherwise it would require O(N) additional memory). If you need to modify the list use alist.reverse(); if
         # you need a copy of the list in reversed order use alist[::-1]
         for l, layer in zip(range(len(self.layers), 0, -1), reversed(self.layers)):
-            # dAdZ = layer.dAdZ(layer.A)
-            # dZdW = layer.A_l_1
-            #
-            # # dLdW = dLdA * dAdZ * dZdW
-            # dLdZ = previous * dAdZ
-            # dJdW = np.dot(dLdZ, dZdW.T) / self.X.shape[1]  # this is two steps in one line; getting dLdw and then dJdW
-            # # dLdW = dLdA * dAdZ
-            # dJdb = np.sum(dLdZ, axis=1, keepdims=True) / self.X.shape[1]
-            #
-            # dZdA_1 = layer.W
-
-
-            # if l > 1:
-            #     dJdA_1 = np.dot(dZdA_1.T, dLdZ) / self.X.shape[1]  # this is two steps in one line; getting dLd(A-1) and then dJd(A-1)
-            #     previous = dJdA_1
-
             dLdA, dJdW, dJdb = self._calculate_single_layer_gradients(dLdA, layer, compute_dJdA_1=(l>1))
 
-            layer.W -= alpha*dJdW
+            # L2 Regularization
+            weight_decay = 1 - alpha*lmbda/self.m
+
+            layer.W = weight_decay*layer.W - alpha*dJdW
             layer.b -= alpha*dJdb
 
-    def train(self, alpha=0.01, iterations=1):
+    def train(self, alpha=0.01, iterations=1, regularization_parameter=0):
         bef = time.time()
         for i in range(iterations):
             if i%100==0:
-                print('Iter # {} error: {:.5f}, training acc: {:.2f}%'.format(i, self.cost(), self.accuracy(self.X, self.y.argmax(axis=0) + 1)))
+                print('Iter # {} error: {:.5f}, training acc: {:.2f}%'.format(i,
+                                                  self.cost(regularization_parameter=regularization_parameter),
+                                                  self.accuracy(self.X, self.y.argmax(axis=0) + 1)))
 
-            self._calculate_gradients_and_update_weights(alpha=alpha)
+            self._calculate_gradients_and_update_weights(alpha=alpha, lmbda=regularization_parameter)
         else:
             aft = time.time()
 
@@ -192,7 +182,9 @@ class NN:
             print('-'*80)
             print('training time: {:.2f} SECs'.format(aft-bef))
             print('-'*80)
-            print('Finish error: {:.5f}, training acc: {:.2f}%'.format(self.cost(), self.accuracy(self.X, self.y.argmax(axis=0) + 1)))
+            print('Finish error: {:.5f}, training acc: {:.2f}%'.format(
+                self.cost(regularization_parameter=regularization_parameter),
+                self.accuracy(self.X, self.y.argmax(axis=0) + 1)))
 
     @staticmethod
     def cross_entropy_loss(y, a):
@@ -203,7 +195,14 @@ class NN:
     def cross_entropy_prime(y, a):
         return -y/a + (1-y)/(1-a)
 
-    def cost(self):
+    def regularization_term(self, lmbda):
+        agg = 0
+        for layer in self.layers:
+            agg = np.sum(np.square(layer.W))
+        else:
+            return lmbda/(2*self.m) * agg
+
+    def cost(self, regularization_parameter=0):
         A = self.X
         for layer in self.layers:
             Z = np.dot(layer.W, A) + layer.b
@@ -211,8 +210,7 @@ class NN:
         else:
             loss_matrix = self.loss(self.y, A)
             sum_over_all_examples = np.sum(loss_matrix, axis=1)/loss_matrix.shape[1]
-            return np.sum(sum_over_all_examples)/sum_over_all_examples.size
-            # print(incidence_y.argmax(axis=0)+1)
+            return np.sum(sum_over_all_examples)/sum_over_all_examples.size + self.regularization_term(lmbda=regularization_parameter)
 
     def accuracy(self, X, y):
         A = X
