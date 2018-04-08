@@ -1,5 +1,7 @@
 import numpy as np
 from scipy.special import expit, logit
+import time
+
 
 class HiddenLayer:
     fff = True
@@ -21,7 +23,8 @@ class HiddenLayer:
             self.dAdZ = self.leaky_relu_prime
 
         # multiplying W by a small number makes the learning fast
-        self.W = np.random.randn(n_units, n_in) * 0.01
+        # however from a practical point of view when multiplied by 0.01 using l>2 the NN does not converge
+        self.W = np.random.randn(n_units, n_in) * 0.1
 
         self.b = np.zeros((n_units, 1))
 
@@ -90,7 +93,6 @@ class NN:
         # self.y = to_categorical(y)
 
         incidence_y = np.zeros((self.classes.size, y.size))
-        print(incidence_y.shape)
         incidence_y[y.ravel()-1, np.arange(y.size)] = 1  # (5000, 10)
 
         self.y = incidence_y
@@ -176,13 +178,21 @@ class NN:
             layer.b -= alpha*dJdb
 
     def train(self, alpha=0.01, iterations=1):
-        print(self.cost())
+        bef = time.time()
         for i in range(iterations):
-            self._calculate_gradients_and_update_weights(alpha=alpha)
             if i%100==0:
-                print(i, self.cost(), self.accuracy())
+                print('Iter # {} error: {:.5f}, training acc: {:.2f}%'.format(i, self.cost(), self.accuracy(self.X, self.y.argmax(axis=0) + 1)))
+
+            self._calculate_gradients_and_update_weights(alpha=alpha)
         else:
-            print(self.cost())
+            aft = time.time()
+
+            print('-'*80)
+            print('| Summary')
+            print('-'*80)
+            print('training time: {:.2f} SECs'.format(aft-bef))
+            print('-'*80)
+            print('Finish error: {:.5f}, training acc: {:.2f}%'.format(self.cost(), self.accuracy(self.X, self.y.argmax(axis=0) + 1)))
 
     @staticmethod
     def cross_entropy_loss(y, a):
@@ -203,16 +213,15 @@ class NN:
             return np.sum(sum_over_all_examples)/sum_over_all_examples.size
             # print(incidence_y.argmax(axis=0)+1)
 
-    def accuracy(self):
-        A = self.X
+    def accuracy(self, X, y):
+        A = X
         for layer in self.layers:
             Z = np.dot(layer.W, A) + layer.b
             A = layer.activation(Z)
         else:
-
-            y = self.y.argmax(axis=0) + 1
-            pred = A.argmax(axis=0) + 1
-            res = np.equal(pred, y)
+            # y = y.argmax(axis=0) + 1
+            prediction = A.argmax(axis=0) + 1
+            res = np.equal(prediction, y)
             return 100 * np.sum(res)/y.size
 
 
