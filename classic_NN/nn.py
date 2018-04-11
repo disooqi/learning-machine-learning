@@ -102,6 +102,7 @@ class HiddenLayer:
     def leaky_relu_prime(A, alpha=0.01):
         return np.where(A > 0, 1, alpha)
 
+
 class NN:
     def __init__(self, X, y, loss='cross_entropy'):
         if loss == 'cross_entropy':
@@ -110,8 +111,8 @@ class NN:
 
         self.classes = np.unique(y)
         self.layers = list()
-
-        self.X = X
+        # self.X = X
+        self.X, self.mu, self.sigma_squared = self._normalize_input_features(X)
         self.m = X.shape[1]
         # self.y = to_categorical(y)
 
@@ -119,6 +120,18 @@ class NN:
         incidence_y[y.ravel()-1, np.arange(y.size)] = 1  # (5000, 10)
 
         self.y = incidence_y
+
+    @staticmethod
+    def _normalize_input_features(X):
+        n, m = X.shape
+        mu = np.mean(X, axis=1, keepdims=True)
+        centered_X = X - mu
+        # sigma_squared = np.sum(np.square(centered_X), axis=1, keepdims=True)/m
+        sigma = np.std(centered_X, axis=1,keepdims=True, ddof=1) # you need to square it
+        standard_normalized_X = np.divide(centered_X, sigma, where=sigma!=0)
+        # andrew_normalized_X = np.divide(centered_X, sigma_squared, where=sigma_squared!=0)
+
+        return standard_normalized_X, mu, sigma
 
     def add_layer(self, n_units, activation='sigmoid', dropout_keep_prob=1):
         if self.layers:
