@@ -4,7 +4,7 @@ import time
 
 
 class HiddenLayer:
-    def __init__(self, n_units, n_in, activation='sigmoid', initializer='1', output_layer=False, keep_prob=1):
+    def __init__(self, n_units, n_in, activation='sigmoid', output_layer=False, keep_prob=1):
 
         self.n_units = n_units
         #  It means at every iteration you shut down each neurons of the layer with "1-keep_prob" probability.
@@ -13,26 +13,47 @@ class HiddenLayer:
         if activation == 'sigmoid':
             self.activation=self.sigmoid
             self.dAdZ = self.sigmoid_prime
+            self._weights_initialization(n_in)
         elif activation == 'relu':
             self.activation = self.relu
             self.dAdZ = self.relu_prime
+            self._He_initialization(n_in)
         elif activation == 'tanh':
             self.activation = self.tanh
             self.dAdZ = self.tanh_prime
+            self._Xavier_initialization(n_in)
         elif activation == 'leaky_relu':
             self.activation = self.leaky_relu
             self.dAdZ = self.leaky_relu_prime
+            self._He_initialization(n_in)
 
+        self.output_layer = output_layer
+
+    def _weights_initialization(self, n_in):
         # multiplying W by a small number makes the learning fast
         # however from a practical point of view when multiplied by 0.01 using l>2 the NN does not converge
-        self.W = np.random.randn(n_units, n_in) * 0.1
+        # that is beacuse it runs into gradients vanishing problem
+        self.W = np.random.randn(self.n_units, n_in) * 0.01
+        self.b = np.zeros((self.n_units, 1))
 
-        self.b = np.zeros((n_units, 1))
+    def _He_initialization(self, n_in):
+        self.W = np.random.randn(self.n_units, n_in) * np.sqrt(2/n_in)
+        self.b = np.zeros((self.n_units, 1))
 
-        if output_layer:
-            self.output_layer = True
-        else:
-            self.output_layer = False
+    def _Xavier_initialization(self, n_in):
+        """Initialize weight W using Xavier Initialization
+
+        So if the input features of activations are roughly mean 0 and standard variance and variance 1 then this would
+        cause z to also take on a similar scale and this doesn't solve, but it definitely helps reduce the vanishing,
+        exploding gradients problem because it's trying to set each of the weight matrices W so that it's not
+        too much bigger than 1 and not too much less than 1 so it doesn't explode or vanish too quickly.
+        """
+        self.W = np.random.randn(self.n_units, n_in) * np.sqrt(1 / n_in)
+        self.b = np.zeros((self.n_units, 1))
+
+    def _Benjio_initialization(self, n_in):
+        self.W = np.random.randn(self.n_units, n_in) * np.sqrt(2/(n_in+self.n_units))
+        self.b = np.zeros((self.n_units, 1))
 
     @staticmethod
     def sigmoid(Z):
@@ -99,20 +120,20 @@ class NN:
 
         self.y = incidence_y
 
-    def add_layer(self, n_units, activation='sigmoid', initializer='1', dropout_keep_prob=1):
+    def add_layer(self, n_units, activation='sigmoid', dropout_keep_prob=1):
         if self.layers:
             n_units_previous_layer = self.layers[-1].n_units
         else:
             n_units_previous_layer = self.X.shape[0]
 
-        layer = HiddenLayer(n_units, n_units_previous_layer, activation=activation, initializer=initializer,
-                            keep_prob=dropout_keep_prob)
+        layer = HiddenLayer(n_units, n_units_previous_layer, activation=activation, keep_prob=dropout_keep_prob)
 
         self.layers.append(layer)
 
-    def add_output_layer(self, initializer='1'):
+    def add_output_layer(self):
         if not self.layers[-1].output_layer:
-            self.add_layer(self.classes.size, activation='sigmoid', initializer=initializer)
+            self.add_layer(self.classes.size, activation='sigmoid')
+            self.layers[-1].output_layer = True
         else:
             # TODO: you should raise an error and message that says you need to delete existing output_layer
             pass
