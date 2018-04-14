@@ -104,40 +104,21 @@ class HiddenLayer:
 
 
 class NN:
-    def __init__(self, X, y, loss='cross_entropy'):
+    def __init__(self, n_features, n_classes, loss='cross_entropy', dataset=None):
+        self.n = n_features
+        self.n_classes = n_classes
+        self.dataset = dataset
         if loss == 'cross_entropy':
             self.loss = self.cross_entropy_loss
             self.activation_prime = self.cross_entropy_prime
 
-        self.classes = np.unique(y)
         self.layers = list()
-        # self.X = X
-        self.X, self.mu, self.sigma_squared = self._normalize_input_features(X)
-        self.m = X.shape[1]
-        # self.y = to_categorical(y)
-
-        incidence_y = np.zeros((self.classes.size, y.size))
-        incidence_y[y.ravel()-1, np.arange(y.size)] = 1  # (5000, 10)
-
-        self.y = incidence_y
-
-    @staticmethod
-    def _normalize_input_features(X):
-        n, m = X.shape
-        mu = np.mean(X, axis=1, keepdims=True)
-        centered_X = X - mu
-        # sigma_squared = np.sum(np.square(centered_X), axis=1, keepdims=True)/m
-        sigma = np.std(centered_X, axis=1,keepdims=True, ddof=1) # you need to square it
-        standard_normalized_X = np.divide(centered_X, sigma, where=sigma!=0)
-        # andrew_normalized_X = np.divide(centered_X, sigma_squared, where=sigma_squared!=0)
-
-        return standard_normalized_X, mu, sigma
 
     def add_layer(self, n_units, activation='sigmoid', dropout_keep_prob=1):
         if self.layers:
             n_units_previous_layer = self.layers[-1].n_units
         else:
-            n_units_previous_layer = self.X.shape[0]
+            n_units_previous_layer = self.n
 
         layer = HiddenLayer(n_units, n_units_previous_layer, activation=activation, keep_prob=dropout_keep_prob)
 
@@ -145,7 +126,7 @@ class NN:
 
     def add_output_layer(self):
         if not self.layers[-1].output_layer:
-            self.add_layer(self.classes.size, activation='sigmoid')
+            self.add_layer(self.n_classes, activation='sigmoid')
             self.layers[-1].output_layer = True
         else:
             # TODO: you should raise an error and message that says you need to delete existing output_layer
@@ -215,15 +196,17 @@ class NN:
             layer.W = weight_decay*layer.W - alpha*dJdW
             layer.b -= alpha*dJdb
 
-    def train(self, alpha=0.01, iterations=1, regularization_parameter=0):
+    def train(self, alpha=0.01, epochs=1, mini_batch_size=0, regularization_parameter=0):
         bef = time.time()
-        for i in range(iterations):
-            if i%100==0:
-                print('Iter # {} error: {:.5f}, training acc: {:.2f}%'.format(i,
-                                                  self.cost(regularization_parameter=regularization_parameter),
-                                                  self.accuracy(self.X, self.y.argmax(axis=0) + 1)))
+        for i in range(epochs):
+            for mini_batch in self.dataset.next_mini_batch(size=mini_batch_size):
+                self.X, self.y, self.m = mini_batch.X, mini_batch.y, mini_batch.X.shape[1]
+                if i%100==0:
+                    print('Iter # {} error: {:.5f}, training acc: {:.2f}%'.format(i,
+                                                      self.cost(regularization_parameter=regularization_parameter),
+                                                      self.accuracy(self.X, self.y)))
 
-            self._calculate_gradients_and_update_weights(alpha=alpha, lmbda=regularization_parameter)
+                self._calculate_gradients_and_update_weights(alpha=alpha, lmbda=regularization_parameter)
         else:
             aft = time.time()
 
@@ -234,7 +217,7 @@ class NN:
             print('-'*80)
             print('Finish error: {:.5f}, training acc: {:.2f}%'.format(
                 self.cost(regularization_parameter=regularization_parameter),
-                self.accuracy(self.X, self.y.argmax(axis=0) + 1)))
+                self.accuracy(self.X, self.y)))
 
     @staticmethod
     def cross_entropy_loss(y, a):
@@ -270,7 +253,7 @@ class NN:
             Z = np.dot(layer.W, A) + layer.b
             A = layer.activation(Z)
         else:
-            # y = y.argmax(axis=0) + 1
+            y = y.argmax(axis=0) + 1
             prediction = A.argmax(axis=0) + 1
             res = np.equal(prediction, y)
             return 100 * np.sum(res)/y.size
