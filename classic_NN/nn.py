@@ -1,17 +1,23 @@
 import numpy as np
-# from scipy.special import expit, logit
+from scipy.special import expit, logit
 import time
+np.random.seed(0)
 
 
 class HiddenLayer:
-    def __init__(self, n_units, n_in, activation='sigmoid', output_layer=False, keep_prob=1):
+    def __init__(self):
+        pass
 
+
+class FullConnectedLayer(HiddenLayer):
+    def __init__(self, n_units, n_in, activation='sigmoid', output_layer=False, keep_prob=1):
+        super().__init__()
         self.n_units = n_units
         #  It means at every iteration you shut down each neurons of the layer with "1-keep_prob" probability.
         self.keep_prob = keep_prob
 
         if activation == 'sigmoid':
-            self.activation=self.sigmoid
+            self.activation = self.sigmoid
             self.dAdZ = self.sigmoid_prime
             self._weights_initialization(n_in)
         elif activation == 'relu':
@@ -37,7 +43,7 @@ class HiddenLayer:
         self.b = np.zeros((self.n_units, 1))
 
     def _He_initialization(self, n_in):
-        self.W = np.random.randn(self.n_units, n_in) * np.sqrt(2/n_in)
+        self.W = np.random.randn(self.n_units, n_in) * np.sqrt(2 / n_in)
         self.b = np.zeros((self.n_units, 1))
 
     def _Xavier_initialization(self, n_in):
@@ -52,14 +58,14 @@ class HiddenLayer:
         self.b = np.zeros((self.n_units, 1))
 
     def _Benjio_initialization(self, n_in):
-        self.W = np.random.randn(self.n_units, n_in) * np.sqrt(2/(n_in+self.n_units))
+        self.W = np.random.randn(self.n_units, n_in) * np.sqrt(2 / (n_in + self.n_units))
         self.b = np.zeros((self.n_units, 1))
 
     @staticmethod
     def sigmoid(Z):
         # https://docs.scipy.org/doc/scipy/reference/generated /scipy.special.expit.html
-        return 1 / (1 + np.exp(-Z))
-        # return expit(np.clip(Z, -709, 36.73))
+        # return 1 / (1 + np.exp(-Z))
+        return expit(np.clip(Z, -709, 36.73))
 
     @classmethod
     def sigmoid_prime(cls, A):
@@ -74,7 +80,7 @@ class HiddenLayer:
 
     @classmethod
     def tanh_prime(cls, A):
-        return 1 - A**2
+        return 1 - A ** 2
 
     @staticmethod
     def relu(Z):
@@ -95,12 +101,17 @@ class HiddenLayer:
         :return:
 
         '''
-        #return np.clip(Z, alpha * Z, Z)
-        return np.where(Z < 0, alpha*Z, Z)
+        # return np.clip(Z, alpha * Z, Z)
+        return np.where(Z < 0, alpha * Z, Z)
 
     @staticmethod
     def leaky_relu_prime(A, alpha=0.01):
         return np.where(A > 0, 1, alpha)
+
+
+class ConvLayer(HiddenLayer):
+    def __init__(self):
+        super().__init__()
 
 
 class NN:
@@ -120,11 +131,14 @@ class NN:
         else:
             n_units_previous_layer = self.n
 
-        layer = HiddenLayer(n_units, n_units_previous_layer, activation=activation, keep_prob=dropout_keep_prob)
+        layer = FullConnectedLayer(n_units, n_units_previous_layer, activation=activation, keep_prob=dropout_keep_prob)
 
         self.layers.append(layer)
 
     def add_output_layer(self):
+        if not self.layers:
+            self.add_layer(self.n_classes, activation='sigmoid')
+            self.layers[-1].output_layer = True
         if not self.layers[-1].output_layer:
             self.add_layer(self.n_classes, activation='sigmoid')
             self.layers[-1].output_layer = True
@@ -146,7 +160,7 @@ class NN:
         # During forward propagation, you had divided A1 by keep_prob. In backpropagation, you'll therefore have to
         # divide dA1 by keep_prob again (the calculus interpretation is that if  A[1]A[1]  is scaled by keep_prob, then
         # its derivative  dA[1]dA[1]  is also scaled by the same keep_prob).
-        dLdA = np.multiply(dLdA, layer_cache.D)/layer_cache.keep_prob
+        dLdA = np.multiply(dLdA, layer_cache.D) / layer_cache.keep_prob
         dAdZ = layer_cache.dAdZ(layer_cache.A)
         dLdZ = dLdA * dAdZ  # Element-wise product
 
@@ -165,7 +179,7 @@ class NN:
     def _calculate_gradients_and_update_weights(self, alpha, lmbda):
         A = self.X
         for layer in self.layers:
-            layer.A_l_1 = A   # this is A-1 from last loop step
+            layer.A_l_1 = A  # this is A-1 from last loop step
             Z = np.dot(layer.W, A) + layer.b
             A = layer.activation(Z)
 
@@ -175,7 +189,6 @@ class NN:
 
             layer.D = D
             layer.A = A
-
 
         with np.errstate(invalid='raise'):
             try:
@@ -188,33 +201,32 @@ class NN:
         # (otherwise it would require O(N) additional memory). If you need to modify the list use alist.reverse(); if
         # you need a copy of the list in reversed order use alist[::-1]
         for l, layer in zip(range(len(self.layers), 0, -1), reversed(self.layers)):
-            dLdA, dJdW, dJdb = self._calculate_single_layer_gradients(dLdA, layer, compute_dJdA_1=(l>1))
+            dLdA, dJdW, dJdb = self._calculate_single_layer_gradients(dLdA, layer, compute_dJdA_1=(l > 1))
 
             # L2 Regularization
-            weight_decay = 1 - alpha*lmbda/self.m
-
-            layer.W = weight_decay*layer.W - alpha*dJdW
-            layer.b -= alpha*dJdb
+            weight_decay = 1 - ((alpha*lmbda) / self.m)
+            layer.W = weight_decay * layer.W - alpha * dJdW
+            layer.b -= alpha * dJdb
 
     def train(self, alpha=0.01, epochs=1, mini_batch_size=0, regularization_parameter=0):
         bef = time.time()
         for i in range(epochs):
+
             for mini_batch in self.dataset.next_mini_batch(size=mini_batch_size):
                 self.X, self.y, self.m = mini_batch.X, mini_batch.y, mini_batch.X.shape[1]
-                if i%100==0:
-                    print('Iter # {} error: {:.5f}, training acc: {:.2f}%'.format(i,
-                                                      self.cost(regularization_parameter=regularization_parameter),
-                                                      self.accuracy(self.X, self.y)))
-
                 self._calculate_gradients_and_update_weights(alpha=alpha, lmbda=regularization_parameter)
+            else:
+                if i % 10 == 0:
+                    print('Iter# {} (error: {:.5f}), and (training acc: {:.2f}%)'.format(i, self.cost(
+                        regularization_parameter=regularization_parameter), self.accuracy(self.X, self.y)))
         else:
             aft = time.time()
 
-            print('-'*80)
+            print('-' * 80)
             print('| Summary')
-            print('-'*80)
-            print('training time: {:.2f} SECs'.format(aft-bef))
-            print('-'*80)
+            print('-' * 80)
+            print('training time: {:.2f} SECs'.format(aft - bef))
+            print('-' * 80)
             print('Finish error: {:.5f}, training acc: {:.2f}%'.format(
                 self.cost(regularization_parameter=regularization_parameter),
                 self.accuracy(self.X, self.y)))
@@ -227,14 +239,14 @@ class NN:
 
     @staticmethod
     def cross_entropy_prime(y, a):
-        return -y/a + (1-y)/(1-a)
+        return -y / a + (1 - y) / (1 - a)
 
     def regularization_term(self, lmbda):
         agg = 0
         for layer in self.layers:
             agg = np.sum(np.square(layer.W))
         else:
-            return lmbda/(2*self.m) * agg
+            return (lmbda / (2 * self.m)) * agg
 
     def cost(self, regularization_parameter=0):
         A = self.X
@@ -243,8 +255,9 @@ class NN:
             A = layer.activation(Z)
         else:
             loss_matrix = self.loss(self.y, A)
-            sum_over_all_examples = np.sum(loss_matrix, axis=1)/loss_matrix.shape[1]
-            return np.sum(sum_over_all_examples)/sum_over_all_examples.size + self.regularization_term(lmbda=regularization_parameter)
+            sum_over_all_examples = np.sum(loss_matrix, axis=1) / loss_matrix.shape[1]
+            return (np.sum(sum_over_all_examples) / sum_over_all_examples.size) + self.regularization_term(
+                lmbda=regularization_parameter)
 
     def accuracy(self, X, y):
         # You only use dropout during training. Don't use dropout (randomly eliminate nodes) during test time.
@@ -256,7 +269,7 @@ class NN:
             y = y.argmax(axis=0) + 1
             prediction = A.argmax(axis=0) + 1
             res = np.equal(prediction, y)
-            return 100 * np.sum(res)/y.size
+            return 100 * np.sum(res) / y.size
 
 
 if __name__ == '__main__':
