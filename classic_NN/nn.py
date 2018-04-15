@@ -1,7 +1,23 @@
 import numpy as np
 from scipy.special import expit, logit
 import time
-np.random.seed(4) # 4
+import logging
+
+np.random.seed(4)  # 4
+logger = logging.getLogger(__name__)
+fr = logging.Formatter('%(asctime)s:%(name)s:%(levelname)s:%(message)s')
+sh = logging.StreamHandler()
+# sh.setFormatter(fr)
+logger.addHandler(sh)
+logger.setLevel(logging.DEBUG)
+
+logger2 = logging.getLogger('other')
+file_handler = logging.FileHandler('run.log')
+file_handler.setFormatter(fr)
+file_handler.setLevel(logging.INFO)
+logger2.addHandler(file_handler)
+
+logger2.setLevel(logging.INFO)
 
 
 class HiddenLayer:
@@ -14,7 +30,7 @@ class ConvLayer(HiddenLayer):
         super().__init__()
 
 
-class FullConnectedLayer(HiddenLayer):
+class FullyConnectedLayer(HiddenLayer):
     def __init__(self, n_units, n_in, activation='sigmoid', output_layer=False, keep_prob=1):
         super().__init__()
         self.n_units = n_units
@@ -38,6 +54,7 @@ class FullConnectedLayer(HiddenLayer):
             self.dAdZ = self.leaky_relu_prime
             self._He_initialization(n_in)
 
+        self.activation_type = activation
         self.output_layer = output_layer
 
     def _weights_initialization(self, n_in):
@@ -113,6 +130,10 @@ class FullConnectedLayer(HiddenLayer):
     def leaky_relu_prime(A, alpha=0.01):
         return np.where(A > 0, 1, alpha)
 
+    def __repr__(self):
+        return 'FullyConnectedLayer(n_units={}, activation={}, output_layer={}, keep_prob={})'.format(
+            self.n_units, self.activation_type, self.output_layer, self.keep_prob)
+
 
 class NN:
     def __init__(self, n_features, n_classes, loss='cross_entropy', dataset=None):
@@ -131,7 +152,7 @@ class NN:
         else:
             n_units_previous_layer = self.n
 
-        layer = FullConnectedLayer(n_units, n_units_previous_layer, activation=activation, keep_prob=dropout_keep_prob)
+        layer = FullyConnectedLayer(n_units, n_units_previous_layer, activation=activation, keep_prob=dropout_keep_prob)
 
         self.layers.append(layer)
 
@@ -201,7 +222,7 @@ class NN:
             dLdA, dJdW, dJdb = self._calculate_single_layer_gradients(dLdA, layer, compute_dLdA_1=(l > 1))
 
             # L2 Regularization
-            weight_decay = 1 - ((alpha*lmbda) / X.shape[1])
+            weight_decay = 1 - ((alpha * lmbda) / X.shape[1])
             layer.W = weight_decay * layer.W - alpha * dJdW
             layer.b -= alpha * dJdb
 
@@ -209,23 +230,39 @@ class NN:
         bef = time.time()
         for i in range(epochs):
             for mini_batch in self.dataset.next_mini_batch(size=mini_batch_size):
-                self._calculate_gradients_and_update_weights(mini_batch.X, mini_batch.y, alpha=alpha, lmbda=regularization_parameter)
+                self._calculate_gradients_and_update_weights(mini_batch.X, mini_batch.y, alpha=alpha,
+                                                             lmbda=regularization_parameter)
             else:
-                if i % 100 == 0:
+                if i % 10 == 0:
                     cost = self.cost(self.dataset.X_train, self.dataset.y_train, lmbda=regularization_parameter)
                     acc = self.accuracy(self.dataset.X_train, self.dataset.y_train)
-                    print('Iter# {} (error: {:.5f}), and (training acc: {:.2f}%)'.format(i, cost, acc))
+                    logger.info('Iter# {} (error: {:.5f}), and (training acc: {:.2f}%)'.format(i, cost, acc))
         else:
             aft = time.time()
 
-            print('-' * 80)
-            print('| Summary')
-            print('-' * 80)
-            print('training time: {:.2f} SECs'.format(aft - bef))
-            print('-' * 80)
-            print('Finish error: {:.5f}, training acc: {:.2f}%'.format(
+            logger.debug('-' * 80)
+            logger.debug('| Summary')
+            logger.debug('-' * 80)
+            logger.debug('training time: {:.2f} SECs'.format(aft - bef))
+            logger.debug('-' * 80)
+            logger.debug('Finish error: {:.5f}, training acc: {:.2f}%'.format(
                 self.cost(self.dataset.X_train, self.dataset.y_train, lmbda=regularization_parameter),
                 self.accuracy(self.dataset.X_train, self.dataset.y_train)))
+
+            ss = ''
+            for i, layer in enumerate(self.layers):
+                ss += '\n layer# '+ str(i + 1) +' - '+repr(layer)
+
+            logger2.info('train error: {:.2f}% '
+                         'train acc: {:.2f}%, '
+                         'time: {:.2f}SECs, '
+                         '#layers {}, '
+                         '#epochs: {}, '
+                         'learning rate: {},\n'
+                         'regularization parameter: {}, '
+                         'mini-batch size: {}, '
+                         'dataset: [{}, dev_size:{}, shuffle:{}], {}'.format(cost, acc,aft - bef, len(self.layers), epochs, alpha, regularization_parameter,
+                                                  mini_batch_size, self.dataset.name, self.dataset.dev_size, self.dataset.shuffle, ss))
 
     @staticmethod
     def cross_entropy_loss(y, a):
@@ -242,7 +279,7 @@ class NN:
         for layer in self.layers:
             agg = np.sum(np.square(layer.W))
         else:
-            return (lmbda/(2*m)) * agg
+            return (lmbda / (2 * m)) * agg
 
     def cost(self, X, y, lmbda=0):
         A = X
@@ -253,7 +290,7 @@ class NN:
             loss_matrix = self.loss(y, A)
             sum_over_all_examples = np.sum(loss_matrix, axis=1) / loss_matrix.shape[1]
             return (np.sum(sum_over_all_examples) / sum_over_all_examples.size) + self.regularization_term(X.shape[1],
-                lmbda=lmbda)
+                                                                                                           lmbda=lmbda)
 
     def accuracy(self, X, y):
         # You only use dropout during training. Don't use dropout (randomly eliminate nodes) during test time.

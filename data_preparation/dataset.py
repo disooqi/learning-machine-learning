@@ -8,10 +8,13 @@ from collections import namedtuple
 #the function shuffles the dataset
 
 class Dataset:
-    def __init__(self, X, y, dev_size):
+    def __init__(self, X, y, dev_size, name=None, shuffle=True):
+        self.name = name
+        self.dev_size = dev_size
+        self.shuffle = shuffle
         y, self.classes = self.prepare_target(y)
 
-        X_train, X_dev, y_train, y_dev = train_test_split(X.T, y.T, shuffle=True, test_size=dev_size)
+        X_train, X_dev, y_train, y_dev = train_test_split(X.T, y.T, shuffle=shuffle, test_size=dev_size)
         self.y_train, self.y_dev = y_train.T, y_dev.T
 
         self.X_train, self.mu, self.sigma = self._normalize_input_features(X_train.T)
@@ -52,13 +55,14 @@ class Dataset:
 
 class MNIST_dataset(Dataset):
     def __init__(self, X, y, dev_size=0.25):
+
         """dfg dg gghfgh  hjghjhggdgf dfgghgkj dfgdgfsgghghk dgfd
 
         :param X: examples (excpected to be in the shape of n*m)
         :param y:
         :param dev_size:
         """
-        super().__init__(X, y, dev_size)
+        super().__init__(X, y, dev_size, name='MNIST')
 
     @staticmethod
     def prepare_target(y):
