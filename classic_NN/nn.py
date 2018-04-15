@@ -167,7 +167,8 @@ class NN:
             # TODO: you should raise an error and message that says you need to delete existing output_layer
             pass
 
-    def _calculate_single_layer_gradients(self, dLdA, layer_cache, compute_dLdA_1=True):
+    @staticmethod
+    def _calculate_single_layer_gradients(dLdA, layer_cache, compute_dLdA_1=True):
         '''
         :param dJdA:
         :return: dJdA_1, dJdW, dJdb
