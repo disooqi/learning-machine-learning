@@ -9,9 +9,9 @@ from collections import namedtuple
 
 class Dataset:
     def __init__(self, X, y, dev_size):
-        self._y, self.classes = self.prepare_target(y)
+        y, self.classes = self.prepare_target(y)
 
-        X_train, X_dev, y_train, y_dev = train_test_split(X.T, self._y.T, shuffle=True, test_size=dev_size)
+        X_train, X_dev, y_train, y_dev = train_test_split(X.T, y.T, shuffle=True, test_size=dev_size)
         self.y_train, self.y_dev = y_train.T, y_dev.T
 
         self.X_train, self.mu, self.sigma = self._normalize_input_features(X_train.T)
