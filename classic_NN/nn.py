@@ -210,7 +210,7 @@ class NN:
 class Optimization:
     def __init__(self, loss='cross_entropy', method='gradient-descent'):
         self.method = method
-        self.Vs = list()
+        self.VsnSs = list()
         if loss == 'cross_entropy':
             self.loss = self.cross_entropy_loss
             self.activation_prime = self.cross_entropy_prime
@@ -230,26 +230,45 @@ class Optimization:
         return 1 - ((alpha * lmbda) / m)
 
     @classmethod
-    def gradient_descent(cls, dJdW, dJdb, W, b, m, alpha, lmbda, *args, **kwargs):
+    def gradient_descent(cls, dJdW, dJdb, W, b, m, **kwargs):
+        alpha = kwargs['alpha']
+        lmbda = kwargs['lmbda']
         W = cls.weight_decay(m, alpha, lmbda) * W - alpha * dJdW
         b -= alpha * dJdb
 
         return W, b
 
     @classmethod
-    def gradient_descent_with_momentum(cls, dJdW, dJdb, W, b, m, alpha, lmbda, beta, Vs):
-        Vs['Vdw'] = beta*Vs['Vdw'] + (1-beta)*dJdW
-        Vs['Vdb'] = beta*Vs['Vdb'] + (1-beta)*dJdb
+    def gradient_descent_with_momentum(cls, dJdW, dJdb, W, b, m, **kwargs):
+        beta1 = kwargs['beta1']
+        Vs = kwargs['VS']
+        alpha = kwargs['alpha']
+        lmbda = kwargs['lmbda']
+        Vs['Vdw'] = beta1*Vs['Vdw'] + (1-beta1)*dJdW
+        Vs['Vdb'] = beta1*Vs['Vdb'] + (1-beta1)*dJdb
 
         W = cls.weight_decay(m, alpha, lmbda) * W - alpha * Vs['Vdw']
         b = b - alpha * Vs['Vdb']
 
         return W, b
 
-    def RMSprop(self, *args, **kwargs):
-        pass
+    @classmethod
+    def RMSprop(cls, dJdW, dJdb, W, b, m, **kwargs):
+        beta2 = kwargs['beta1']
+        Ss = kwargs['VS']
+        alpha = kwargs['alpha']
+        lmbda = kwargs['lmbda']
+        epsilon = np.finfo(np.float32).eps
+        Ss['Sdw'] = beta2 * Ss['Sdw'] + (1 - beta2) * np.square(dJdW)
+        Ss['Sdb'] = beta2 * Ss['Sdb'] + (1 - beta2) * np.square(dJdb)
 
-    def adam(self, *args, **kwargs):
+        W = cls.weight_decay(m, alpha, lmbda)*W - alpha * (dJdW/(np.sqrt(Ss['Sdw'])+epsilon))
+        b = b - alpha * (dJdb/(np.sqrt(Ss['Sdb'])+epsilon))
+
+        return W, b
+
+    @classmethod
+    def adam(cls, dJdW, dJdb, W, b, m,  *args, **kwargs):
         pass
 
     @staticmethod
@@ -282,7 +301,7 @@ class Optimization:
                                                                                                            X.shape[1],
                                                                                                            lmbda=lmbda)
 
-    def _update_weights(self, X, y, network, alpha, lmbda, beta):
+    def _update_weights(self, X, y, network, alpha, lmbda, beta1, beta2):
         A = X
         for layer in network.layers:
             layer.A_l_1 = A  # this is A-1 from last loop step
@@ -304,25 +323,26 @@ class Optimization:
         # To avoid the confusion: reversed() doesn't modify the list. reversed() doesn't make a copy of the list
         # (otherwise it would require O(N) additional memory). If you need to modify the list use alist.reverse(); if
         # you need a copy of the list in reversed order use alist[::-1]
-        for l, layer, Vs in zip(range(len(network.layers), 0, -1), reversed(network.layers), reversed(self.Vs)):
+        for l, layer, VsnSs in zip(range(len(network.layers), 0, -1), reversed(network.layers), reversed(self.VsnSs)):
             dLdA, dJdW, dJdb = network._calculate_single_layer_gradients(dLdA, layer, compute_dLdA_1=(l > 1))
 
-            layer.W, layer.b = self.optimizer(dJdW, dJdb, layer.W, layer.b, X.shape[1], alpha, lmbda, beta, Vs)
+            layer.W, layer.b = self.optimizer(dJdW, dJdb, layer.W, layer.b, X.shape[1], alpha=alpha, lmbda=lmbda,
+                                              VS=VsnSs, beta1=beta1, beta2=beta2)
 
-    def minimize(self, network, epochs=1, mini_batch_size=0, learning_rate=0.1, regularization_parameter=0, momentum=0.9,
-                 dataset=None):
+    def minimize(self, network, epochs=1, mini_batch_size=0, learning_rate=0.1, regularization_parameter=0,
+                 momentum=0.9, beta2=0.999, dataset=None):
         bef = time.time()
         for layer in network.layers:
-            self.Vs.append({"Vdw": np.zeros_like(layer.W), "Vdb": np.zeros_like(layer.b)})
+            self.VsnSs.append({"Vdw": np.zeros_like(layer.W), "Vdb": np.zeros_like(layer.b),
+                               "Sdw": np.zeros_like(layer.W), "Sdb": np.zeros_like(layer.b)})
 
         for i in range(epochs):
             for mini_batch in dataset.next_mini_batch(size=mini_batch_size):
                 self._update_weights(mini_batch.X, mini_batch.y, network, learning_rate,
-                                     regularization_parameter, beta=momentum)
+                                     regularization_parameter, beta1=momentum, beta2=beta2)
             else:
                 if i % 10 == 0:
                     cost = self.cost(network, dataset.X_train, dataset.y_train, lmbda=regularization_parameter)
-                    # acc = self.accuracy(dataset.X_train, dataset.y_train)
                     logger.info('Iter# {} (error: {:.5f})'.format(i, cost))
         else:
             aft = time.time()
