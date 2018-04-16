@@ -5,7 +5,7 @@ import logging
 
 np.random.seed(4)  # 4
 logger = logging.getLogger(__name__)
-fr = logging.Formatter('%(asctime)s:%(name)s:%(levelname)s:%(message)s')
+fr = logging.Formatter('%(asctime)s:%(levelname)s:%(message)s')
 sh = logging.StreamHandler()
 # sh.setFormatter(fr)
 logger.addHandler(sh)
@@ -36,7 +36,7 @@ class FullyConnectedLayer(HiddenLayer):
         self.n_units = n_units
         #  It means at every iteration you shut down each neurons of the layer with "1-keep_prob" probability.
         self.keep_prob = keep_prob
-
+        # todo (3): weight initialization should be in the Network class
         if activation == 'sigmoid':
             self.activation = self.sigmoid
             self.dAdZ = self.sigmoid_prime
@@ -91,9 +91,11 @@ class FullyConnectedLayer(HiddenLayer):
 
     @classmethod
     def sigmoid_prime(cls, A):
-        '''
-        dAdZ
-        '''
+        """ calculate dAdZ
+
+        :param A:
+        :return: dAdZ
+        """
         return A * (1 - A)
 
     @staticmethod
@@ -136,14 +138,9 @@ class FullyConnectedLayer(HiddenLayer):
 
 
 class NN:
-    def __init__(self, n_features, n_classes, loss='cross_entropy', dataset=None):
+    def __init__(self, n_features, n_classes):
         self.n = n_features
         self.n_classes = n_classes
-        self.dataset = dataset
-        if loss == 'cross_entropy':
-            self.loss = self.cross_entropy_loss
-            self.activation_prime = self.cross_entropy_prime
-
         self.layers = list()
 
     def add_layer(self, n_units, activation='sigmoid', dropout_keep_prob=1):
@@ -197,9 +194,98 @@ class NN:
             dLdA_1 = np.dot(dZdA_1.T, dLdZ)  # computing dLd(A-1)
         return dLdA_1, dJdW, dJdb
 
-    def _calculate_gradients_and_update_weights(self, X, y, alpha, lmbda):
+    def accuracy(self, X, y):
+        # You only use dropout during training. Don't use dropout (randomly eliminate nodes) during test time.
         A = X
         for layer in self.layers:
+            Z = np.dot(layer.W, A) + layer.b
+            A = layer.activation(Z)
+        else:
+            y = y.argmax(axis=0) + 1
+            prediction = A.argmax(axis=0) + 1
+            res = np.equal(prediction, y)
+            return 100 * np.sum(res) / y.size
+
+
+"""
+res = minimize(fun=nnCostFunction, x0 =initial_weights, 
+               args=(input_layer_size, hidden_layer_size, num_labels,features, y, _lambda), method='CG', 
+               jac=nn_gradient, options={'maxiter':30})
+"""
+
+
+class Optimization:
+    def __init__(self, loss='cross_entropy', method='gradient-descent'):
+        if loss == 'cross_entropy':
+            self.loss = self.cross_entropy_loss
+            self.activation_prime = self.cross_entropy_prime
+
+        if method == 'gradient-descent':
+            self.optimizer = self.gradient_descent
+        elif method == 'gd-with-momentum':
+            self.optimizer = self.gradient_descent_with_momentum
+        elif method == 'rmsprop':
+            self.optimizer = self.RMSprop
+        elif method == 'adam':
+            self.optimizer = self.adam
+
+    @staticmethod
+    def weight_decay(m, alpha, lmbda):
+        # L2 Regularization
+        return 1 - ((alpha * lmbda) / m)
+
+    @classmethod
+    def gradient_descent(cls, dJdW, dJdb, W, b, m, alpha, lmbda):
+        W = cls.weight_decay(m, alpha, lmbda) * W - alpha * dJdW
+        b -= alpha * dJdb
+
+        return W, b
+
+    @staticmethod
+    def gradient_descent_with_momentum(self):
+        pass
+
+    @staticmethod
+    def RMSprop(self):
+        pass
+
+    @staticmethod
+    def adam(self):
+        pass
+
+    @staticmethod
+    def cross_entropy_loss(y, a):
+        # http://christopher5106.github.io/deep/learning/2016/09/16/about-loss-functions-multinomial-logistic-logarithm-cross-entropy-square-errors-euclidian-absolute-frobenius-hinge.html
+        # https://stats.stackexchange.com/questions/260505/machine-learning-should-i-use-a-categorical-cross-entropy-or-binary-cross-entro
+        return -(y * np.log(a) + (1 - y) * np.log(1 - a))
+
+    @staticmethod
+    def cross_entropy_prime(y, a):
+        return -y / a + (1 - y) / (1 - a)
+
+    @staticmethod
+    def regularization_term(network, m, lmbda):
+        agg = 0
+        for layer in network.layers:
+            agg = np.sum(np.square(layer.W))
+        else:
+            return (lmbda / (2 * m)) * agg
+
+    def cost(self, network, X, y, lmbda=0):
+        A = X
+        for layer in network.layers:
+            Z = np.dot(layer.W, A) + layer.b
+            A = layer.activation(Z)
+        else:
+            loss_matrix = self.loss(y, A)
+            sum_over_all_examples = np.sum(loss_matrix, axis=1) / loss_matrix.shape[1]
+            return (np.sum(sum_over_all_examples) / sum_over_all_examples.size) + self.regularization_term(network,
+                                                                                                           X.shape[1],
+                                                                                                           lmbda=lmbda)
+
+    def _calculate_gradients_and_update_weights(self, X, y, network, alpha, lmbda):
+        A = X
+        for layer in network.layers:
             layer.A_l_1 = A  # this is A-1 from last loop step
             Z = np.dot(layer.W, A) + layer.b
             A = layer.activation(Z)
@@ -219,25 +305,22 @@ class NN:
         # To avoid the confusion: reversed() doesn't modify the list. reversed() doesn't make a copy of the list
         # (otherwise it would require O(N) additional memory). If you need to modify the list use alist.reverse(); if
         # you need a copy of the list in reversed order use alist[::-1]
-        for l, layer in zip(range(len(self.layers), 0, -1), reversed(self.layers)):
-            dLdA, dJdW, dJdb = self._calculate_single_layer_gradients(dLdA, layer, compute_dLdA_1=(l > 1))
+        for l, layer in zip(range(len(network.layers), 0, -1), reversed(network.layers)):
+            dLdA, dJdW, dJdb = network._calculate_single_layer_gradients(dLdA, layer, compute_dLdA_1=(l > 1))
+            layer.W, layer.b = self.optimizer(dJdW, dJdb, layer.W, layer.b, X.shape[1], alpha, lmbda)
 
-            # L2 Regularization
-            weight_decay = 1 - ((alpha * lmbda) / X.shape[1])
-            layer.W = weight_decay * layer.W - alpha * dJdW
-            layer.b -= alpha * dJdb
-
-    def train(self, alpha=0.01, epochs=1, mini_batch_size=0, regularization_parameter=0):
+    def minimize(self, network, epochs=1, mini_batch_size=0, learning_rate=0.1, regularization_parameter=0,
+                 dataset=None):
         bef = time.time()
         for i in range(epochs):
-            for mini_batch in self.dataset.next_mini_batch(size=mini_batch_size):
-                self._calculate_gradients_and_update_weights(mini_batch.X, mini_batch.y, alpha=alpha,
-                                                             lmbda=regularization_parameter)
+            for mini_batch in dataset.next_mini_batch(size=mini_batch_size):
+                self._calculate_gradients_and_update_weights(mini_batch.X, mini_batch.y, network, learning_rate,
+                                                             regularization_parameter)
             else:
                 if i % 10 == 0:
-                    cost = self.cost(self.dataset.X_train, self.dataset.y_train, lmbda=regularization_parameter)
-                    acc = self.accuracy(self.dataset.X_train, self.dataset.y_train)
-                    logger.info('Iter# {} (error: {:.5f}), and (training acc: {:.2f}%)'.format(i, cost, acc))
+                    cost = self.cost(network, dataset.X_train, dataset.y_train, lmbda=regularization_parameter)
+                    # acc = self.accuracy(dataset.X_train, dataset.y_train)
+                    logger.info('Iter# {} (error: {:.5f})'.format(i, cost))
         else:
             aft = time.time()
 
@@ -246,64 +329,25 @@ class NN:
             logger.debug('-' * 80)
             logger.debug('training time: {:.2f} SECs'.format(aft - bef))
             logger.debug('-' * 80)
-            logger.debug('Finish error: {:.5f}, training acc: {:.2f}%'.format(
-                self.cost(self.dataset.X_train, self.dataset.y_train, lmbda=regularization_parameter),
-                self.accuracy(self.dataset.X_train, self.dataset.y_train)))
+            logger.debug('Finish error: {:.5f}'.format(
+                self.cost(network, dataset.X_train, dataset.y_train, lmbda=regularization_parameter)))
 
             ss = ''
-            for i, layer in enumerate(self.layers):
-                ss += '\n layer# '+ str(i + 1) +' - '+repr(layer)
+            for i, layer in enumerate(network.layers):
+                ss += '\n layer# ' + str(i + 1) + ' - ' + repr(layer)
 
-            logger2.info('train error: {:.2f}% '
-                         'train acc: {:.2f}%, '
+            logger2.info('train error: {:.2f}, '
                          'time: {:.2f}SECs, '
                          '#layers {}, '
                          '#epochs: {}, '
                          'learning rate: {},\n'
                          'regularization parameter: {}, '
                          'mini-batch size: {}, '
-                         'dataset: [{}, dev_size:{}, shuffle:{}], {}'.format(cost, acc,aft - bef, len(self.layers), epochs, alpha, regularization_parameter,
-                                                  mini_batch_size, self.dataset.name, self.dataset.dev_size, self.dataset.shuffle, ss))
-
-    @staticmethod
-    def cross_entropy_loss(y, a):
-        # http://christopher5106.github.io/deep/learning/2016/09/16/about-loss-functions-multinomial-logistic-logarithm-cross-entropy-square-errors-euclidian-absolute-frobenius-hinge.html
-        # https://stats.stackexchange.com/questions/260505/machine-learning-should-i-use-a-categorical-cross-entropy-or-binary-cross-entro
-        return -(y * np.log(a) + (1 - y) * np.log(1 - a))
-
-    @staticmethod
-    def cross_entropy_prime(y, a):
-        return -y / a + (1 - y) / (1 - a)
-
-    def regularization_term(self, m, lmbda):
-        agg = 0
-        for layer in self.layers:
-            agg = np.sum(np.square(layer.W))
-        else:
-            return (lmbda / (2 * m)) * agg
-
-    def cost(self, X, y, lmbda=0):
-        A = X
-        for layer in self.layers:
-            Z = np.dot(layer.W, A) + layer.b
-            A = layer.activation(Z)
-        else:
-            loss_matrix = self.loss(y, A)
-            sum_over_all_examples = np.sum(loss_matrix, axis=1) / loss_matrix.shape[1]
-            return (np.sum(sum_over_all_examples) / sum_over_all_examples.size) + self.regularization_term(X.shape[1],
-                                                                                                           lmbda=lmbda)
-
-    def accuracy(self, X, y):
-        # You only use dropout during training. Don't use dropout (randomly eliminate nodes) during test time.
-        A = X
-        for layer in self.layers:
-            Z = np.dot(layer.W, A) + layer.b
-            A = layer.activation(Z)
-        else:
-            y = y.argmax(axis=0) + 1
-            prediction = A.argmax(axis=0) + 1
-            res = np.equal(prediction, y)
-            return 100 * np.sum(res) / y.size
+                         'dataset: [{}, dev_size:{}, shuffle:{}], {}'.format(cost, aft - bef, len(network.layers),
+                                                                             epochs, learning_rate,
+                                                                             regularization_parameter, mini_batch_size,
+                                                                             dataset.name, dataset.dev_size,
+                                                                             dataset.shuffle, ss))
 
 
 if __name__ == '__main__':
