@@ -254,7 +254,7 @@ class Optimization:
 
     @classmethod
     def RMSprop(cls, dJdW, dJdb, W, b, m, **kwargs):
-        beta2 = kwargs['beta1']
+        beta2 = kwargs['beta2']
         Ss = kwargs['VS']
         alpha = kwargs['alpha']
         lmbda = kwargs['lmbda']
@@ -269,7 +269,28 @@ class Optimization:
 
     @classmethod
     def adam(cls, dJdW, dJdb, W, b, m,  *args, **kwargs):
-        pass
+        beta1 = kwargs['beta1']
+        beta2 = kwargs['beta2']
+        VsSs = kwargs['VS']
+        t = kwargs['t']
+        alpha = kwargs['alpha']
+        lmbda = kwargs['lmbda']
+        epsilon = np.finfo(np.float32).eps
+
+        VsSs['Vdw'] = beta1 * VsSs['Vdw'] + (1 - beta1) * dJdW
+        VsSs['Vdb'] = beta1 * VsSs['Vdb'] + (1 - beta1) * dJdb
+        VsSs['Sdw'] = beta2 * VsSs['Sdw'] + (1 - beta2) * np.square(dJdW)
+        VsSs['Sdb'] = beta2 * VsSs['Sdb'] + (1 - beta2) * np.square(dJdb)
+
+        Vdw_corrected = VsSs['Vdw']/(1-beta1**t)
+        Vdb_corrected = VsSs['Vdb']/(1-beta1**t)
+        Sdw_corrected = VsSs['Sdw']/(1-beta2**t)
+        Sdb_corrected = VsSs['Sdb']/(1-beta2**t)
+
+        W = cls.weight_decay(m, alpha, lmbda) * W - alpha * (Vdw_corrected / (np.sqrt(Sdw_corrected) + epsilon))
+        b = b - alpha * (Vdb_corrected / (np.sqrt(Sdb_corrected) + epsilon))
+
+        return W, b
 
     @staticmethod
     def cross_entropy_loss(y, a):
@@ -301,7 +322,7 @@ class Optimization:
                                                                                                            X.shape[1],
                                                                                                            lmbda=lmbda)
 
-    def _update_weights(self, X, y, network, alpha, lmbda, beta1, beta2):
+    def _update_weights(self, X, y, network, alpha, lmbda, t, beta1, beta2):
         A = X
         for layer in network.layers:
             layer.A_l_1 = A  # this is A-1 from last loop step
@@ -327,7 +348,7 @@ class Optimization:
             dLdA, dJdW, dJdb = network._calculate_single_layer_gradients(dLdA, layer, compute_dLdA_1=(l > 1))
 
             layer.W, layer.b = self.optimizer(dJdW, dJdb, layer.W, layer.b, X.shape[1], alpha=alpha, lmbda=lmbda,
-                                              VS=VsnSs, beta1=beta1, beta2=beta2)
+                                              VS=VsnSs, beta1=beta1, beta2=beta2, t=t)
 
     def minimize(self, network, epochs=1, mini_batch_size=0, learning_rate=0.1, regularization_parameter=0,
                  momentum=0.9, beta2=0.999, dataset=None):
@@ -337,9 +358,9 @@ class Optimization:
                                "Sdw": np.zeros_like(layer.W), "Sdb": np.zeros_like(layer.b)})
 
         for i in range(epochs):
-            for mini_batch in dataset.next_mini_batch(size=mini_batch_size):
+            for t, mini_batch in enumerate(dataset.next_mini_batch(size=mini_batch_size), start=1):
                 self._update_weights(mini_batch.X, mini_batch.y, network, learning_rate,
-                                     regularization_parameter, beta1=momentum, beta2=beta2)
+                                     regularization_parameter, t, beta1=momentum, beta2=beta2)
             else:
                 if i % 10 == 0:
                     cost = self.cost(network, dataset.X_train, dataset.y_train, lmbda=regularization_parameter)
