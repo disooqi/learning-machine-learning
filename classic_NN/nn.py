@@ -207,15 +207,10 @@ class NN:
             return 100 * np.sum(res) / y.size
 
 
-"""
-res = minimize(fun=nnCostFunction, x0 =initial_weights, 
-               args=(input_layer_size, hidden_layer_size, num_labels,features, y, _lambda), method='CG', 
-               jac=nn_gradient, options={'maxiter':30})
-"""
-
-
 class Optimization:
     def __init__(self, loss='cross_entropy', method='gradient-descent'):
+        self.method = method
+        self.Vs = list()
         if loss == 'cross_entropy':
             self.loss = self.cross_entropy_loss
             self.activation_prime = self.cross_entropy_prime
@@ -235,22 +230,26 @@ class Optimization:
         return 1 - ((alpha * lmbda) / m)
 
     @classmethod
-    def gradient_descent(cls, dJdW, dJdb, W, b, m, alpha, lmbda):
+    def gradient_descent(cls, dJdW, dJdb, W, b, m, alpha, lmbda, *args, **kwargs):
         W = cls.weight_decay(m, alpha, lmbda) * W - alpha * dJdW
         b -= alpha * dJdb
 
         return W, b
 
-    @staticmethod
-    def gradient_descent_with_momentum(self):
+    @classmethod
+    def gradient_descent_with_momentum(cls, dJdW, dJdb, W, b, m, alpha, lmbda, beta, Vs):
+        Vs['Vdw'] = beta*Vs['Vdw'] + (1-beta)*dJdW
+        Vs['Vdb'] = beta*Vs['Vdb'] + (1-beta)*dJdb
+
+        W = cls.weight_decay(m, alpha, lmbda) * W - alpha * Vs['Vdw']
+        b = b - alpha * Vs['Vdb']
+
+        return W, b
+
+    def RMSprop(self, *args, **kwargs):
         pass
 
-    @staticmethod
-    def RMSprop(self):
-        pass
-
-    @staticmethod
-    def adam(self):
+    def adam(self, *args, **kwargs):
         pass
 
     @staticmethod
@@ -283,7 +282,7 @@ class Optimization:
                                                                                                            X.shape[1],
                                                                                                            lmbda=lmbda)
 
-    def _calculate_gradients_and_update_weights(self, X, y, network, alpha, lmbda):
+    def _update_weights(self, X, y, network, alpha, lmbda, beta):
         A = X
         for layer in network.layers:
             layer.A_l_1 = A  # this is A-1 from last loop step
@@ -305,17 +304,21 @@ class Optimization:
         # To avoid the confusion: reversed() doesn't modify the list. reversed() doesn't make a copy of the list
         # (otherwise it would require O(N) additional memory). If you need to modify the list use alist.reverse(); if
         # you need a copy of the list in reversed order use alist[::-1]
-        for l, layer in zip(range(len(network.layers), 0, -1), reversed(network.layers)):
+        for l, layer, Vs in zip(range(len(network.layers), 0, -1), reversed(network.layers), reversed(self.Vs)):
             dLdA, dJdW, dJdb = network._calculate_single_layer_gradients(dLdA, layer, compute_dLdA_1=(l > 1))
-            layer.W, layer.b = self.optimizer(dJdW, dJdb, layer.W, layer.b, X.shape[1], alpha, lmbda)
 
-    def minimize(self, network, epochs=1, mini_batch_size=0, learning_rate=0.1, regularization_parameter=0,
+            layer.W, layer.b = self.optimizer(dJdW, dJdb, layer.W, layer.b, X.shape[1], alpha, lmbda, beta, Vs)
+
+    def minimize(self, network, epochs=1, mini_batch_size=0, learning_rate=0.1, regularization_parameter=0, momentum=0.9,
                  dataset=None):
         bef = time.time()
+        for layer in network.layers:
+            self.Vs.append({"Vdw": np.zeros_like(layer.W), "Vdb": np.zeros_like(layer.b)})
+
         for i in range(epochs):
             for mini_batch in dataset.next_mini_batch(size=mini_batch_size):
-                self._calculate_gradients_and_update_weights(mini_batch.X, mini_batch.y, network, learning_rate,
-                                                             regularization_parameter)
+                self._update_weights(mini_batch.X, mini_batch.y, network, learning_rate,
+                                     regularization_parameter, beta=momentum)
             else:
                 if i % 10 == 0:
                     cost = self.cost(network, dataset.X_train, dataset.y_train, lmbda=regularization_parameter)
@@ -343,10 +346,11 @@ class Optimization:
                          'learning rate: {},\n'
                          'regularization parameter: {}, '
                          'mini-batch size: {}, '
+                         'optimizer: [{}], '
                          'dataset: [{}, dev_size:{}, shuffle:{}], {}'.format(cost, aft - bef, len(network.layers),
                                                                              epochs, learning_rate,
                                                                              regularization_parameter, mini_batch_size,
-                                                                             dataset.name, dataset.dev_size,
+                                                                             self.method, dataset.name, dataset.dev_size,
                                                                              dataset.shuffle, ss))
 
 
