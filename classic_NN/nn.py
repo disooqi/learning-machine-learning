@@ -229,10 +229,20 @@ class Optimization:
         # L2 Regularization
         return 1 - ((alpha * lmbda) / m)
 
+    @staticmethod
+    def learning_rate_decay(decay_rate, epoch_num):
+        return 1/(1+decay_rate*epoch_num)
+
+    @classmethod
+    def learning_rate(cls, alpha, decay_rate, epoch_num):
+        return cls.learning_rate_decay(decay_rate, epoch_num) * alpha
     @classmethod
     def gradient_descent(cls, dJdW, dJdb, W, b, m, **kwargs):
-        alpha = kwargs['alpha']
+        alpha0 = kwargs['alpha']
         lmbda = kwargs['lmbda']
+        epoch_num = kwargs['epoch']
+        decay_rate = kwargs['decay_rate']
+        alpha = cls.learning_rate(alpha0, decay_rate, epoch_num)
         W = cls.weight_decay(m, alpha, lmbda) * W - alpha * dJdW
         b -= alpha * dJdb
 
@@ -242,8 +252,11 @@ class Optimization:
     def gradient_descent_with_momentum(cls, dJdW, dJdb, W, b, m, **kwargs):
         beta1 = kwargs['beta1']
         Vs = kwargs['VS']
-        alpha = kwargs['alpha']
+        alpha0 = kwargs['alpha']
         lmbda = kwargs['lmbda']
+        epoch_num = kwargs['epoch']
+        decay_rate = kwargs['decay_rate']
+        alpha = cls.learning_rate(alpha0, decay_rate, epoch_num)
         Vs['Vdw'] = beta1*Vs['Vdw'] + (1-beta1)*dJdW
         Vs['Vdb'] = beta1*Vs['Vdb'] + (1-beta1)*dJdb
 
@@ -256,8 +269,11 @@ class Optimization:
     def RMSprop(cls, dJdW, dJdb, W, b, m, **kwargs):
         beta2 = kwargs['beta2']
         Ss = kwargs['VS']
-        alpha = kwargs['alpha']
+        alpha0 = kwargs['alpha']
         lmbda = kwargs['lmbda']
+        epoch_num = kwargs['epoch']
+        decay_rate = kwargs['decay_rate']
+        alpha = cls.learning_rate(alpha0, decay_rate, epoch_num)
         epsilon = np.finfo(np.float32).eps
         Ss['Sdw'] = beta2 * Ss['Sdw'] + (1 - beta2) * np.square(dJdW)
         Ss['Sdb'] = beta2 * Ss['Sdb'] + (1 - beta2) * np.square(dJdb)
@@ -268,13 +284,16 @@ class Optimization:
         return W, b
 
     @classmethod
-    def adam(cls, dJdW, dJdb, W, b, m,  *args, **kwargs):
+    def adam(cls, dJdW, dJdb, W, b, m, **kwargs):
         beta1 = kwargs['beta1']
         beta2 = kwargs['beta2']
         VsSs = kwargs['VS']
         t = kwargs['t']
-        alpha = kwargs['alpha']
+        alpha0 = kwargs['alpha']
         lmbda = kwargs['lmbda']
+        epoch_num = kwargs['epoch']
+        decay_rate = kwargs['decay_rate']
+        alpha = cls.learning_rate(alpha0, decay_rate, epoch_num)
         epsilon = np.finfo(np.float32).eps
 
         VsSs['Vdw'] = beta1 * VsSs['Vdw'] + (1 - beta1) * dJdW
@@ -322,7 +341,7 @@ class Optimization:
                                                                                                            X.shape[1],
                                                                                                            lmbda=lmbda)
 
-    def _update_weights(self, X, y, network, alpha, lmbda, t, beta1, beta2):
+    def _update_weights(self, X, y, network, alpha, lmbda, t, beta1, beta2, decay_rate, epoch_num):
         A = X
         for layer in network.layers:
             layer.A_l_1 = A  # this is A-1 from last loop step
@@ -348,26 +367,26 @@ class Optimization:
             dLdA, dJdW, dJdb = network._calculate_single_layer_gradients(dLdA, layer, compute_dLdA_1=(l > 1))
 
             layer.W, layer.b = self.optimizer(dJdW, dJdb, layer.W, layer.b, X.shape[1], alpha=alpha, lmbda=lmbda,
-                                              VS=VsnSs, beta1=beta1, beta2=beta2, t=t)
+                                              VS=VsnSs, beta1=beta1, beta2=beta2, t=t, decay_rate=decay_rate, epoch=epoch_num)
 
     def minimize(self, network, epochs=1, mini_batch_size=0, learning_rate=0.1, regularization_parameter=0,
-                 momentum=0.9, beta2=0.999, dataset=None):
+                 momentum=0.9, beta2=0.999, learning_rate_decay=0, dataset=None):
         bef = time.time()
         for layer in network.layers:
             self.VsnSs.append({"Vdw": np.zeros_like(layer.W), "Vdb": np.zeros_like(layer.b),
                                "Sdw": np.zeros_like(layer.W), "Sdb": np.zeros_like(layer.b)})
 
-        for i in range(epochs):
+        for epoch in range(1, epochs+1):
             for t, mini_batch in enumerate(dataset.next_mini_batch(size=mini_batch_size), start=1):
                 self._update_weights(mini_batch.X, mini_batch.y, network, learning_rate,
-                                     regularization_parameter, t, beta1=momentum, beta2=beta2)
+                                     regularization_parameter, t, beta1=momentum, beta2=beta2, decay_rate=learning_rate_decay, epoch_num=epoch)
             else:
-                if i % 10 == 0:
+                if epoch % 10 == 0:
                     cost = self.cost(network, dataset.X_train, dataset.y_train, lmbda=regularization_parameter)
-                    logger.info('Iter# {} (error: {:.5f})'.format(i, cost))
+                    logger.info('epoch {} (error: {:.5f})'.format(epoch, cost))
         else:
             aft = time.time()
-
+            cost = self.cost(network, dataset.X_train, dataset.y_train, lmbda=regularization_parameter)
             logger.debug('-' * 80)
             logger.debug('| Summary')
             logger.debug('-' * 80)
