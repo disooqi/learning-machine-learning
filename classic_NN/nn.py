@@ -233,6 +233,17 @@ class Optimization:
     def learning_rate_decay(decay_rate, epoch_num):
         return 1/(1+decay_rate*epoch_num)
 
+    @staticmethod
+    def o_learning_rate_decay(k, epoch_num):
+        return k/np.sqrt(epoch_num)
+
+    @staticmethod
+    def exponential_learning_rate_decay(decay_rate, epoch_num):
+        return 0.95**epoch_num
+
+    def descrete_staircase_learning_rate_decay(self):
+        pass
+
     @classmethod
     def learning_rate(cls, alpha, decay_rate, epoch_num):
         return cls.learning_rate_decay(decay_rate, epoch_num) * alpha
