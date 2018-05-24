@@ -84,6 +84,35 @@ class FullyConnectedLayer(HiddenLayer):
         self.b = np.zeros((self.n_units, 1))
 
     @staticmethod
+    def softmax(Z):
+        """Compute softmax of Matrix Z
+
+        :param Z: is in the shape of (n * m), where n is the number of classes and m is the number of examples
+        :return:
+        """
+        Z_exp = np.exp(Z)
+        return Z_exp/np.sum(Z_exp, axis=0)
+
+    @staticmethod
+    def stable_softmax(Z):
+        """Compute the softmax of vector Z in a numerically stable way."""
+
+        shift_Z = Z - np.max(Z, axis=0)
+        Z_exp = np.exp(shift_Z)
+        return Z_exp / np.sum(Z_exp, axis=0)
+
+    @staticmethod
+    def softmax_prime(A):
+        """N/A
+
+        https://eli.thegreenplace.net/2016/the-softmax-function-and-its-derivative/
+        # Kronecker delta function
+        :param A:
+        :return:
+        """
+        pass
+
+    @staticmethod
     def sigmoid(Z):
         # https://docs.scipy.org/doc/scipy/reference/generated /scipy.special.expit.html
         # return 1 / (1 + np.exp(-Z))
@@ -213,7 +242,7 @@ class Optimization:
         self.VsnSs = list()
         if loss == 'cross_entropy':
             self.loss = self.cross_entropy_loss
-            self.activation_prime = self.cross_entropy_prime
+            self.activation_prime = self.cross_entropy_loss_prime
 
         if method == 'gradient-descent':
             self.optimizer = self.gradient_descent
@@ -241,7 +270,7 @@ class Optimization:
     def exponential_learning_rate_decay(decay_rate, epoch_num):
         return 0.95**epoch_num
 
-    def descrete_staircase_learning_rate_decay(self):
+    def discrete_staircase_learning_rate_decay(self):
         pass
 
     @classmethod
@@ -326,11 +355,23 @@ class Optimization:
     def cross_entropy_loss(y, a):
         # http://christopher5106.github.io/deep/learning/2016/09/16/about-loss-functions-multinomial-logistic-logarithm-cross-entropy-square-errors-euclidian-absolute-frobenius-hinge.html
         # https://stats.stackexchange.com/questions/260505/machine-learning-should-i-use-a-categorical-cross-entropy-or-binary-cross-entro
+        # here we penalize every class even the zero ones
+        # the classes here are independent i.e you can reduce the error of one without affecting the other
         return -(y * np.log(a) + (1 - y) * np.log(1 - a))
 
     @staticmethod
-    def cross_entropy_prime(y, a):
+    def softmax_loss(y, a):
+        # here we penalize only the targeted class and this is intuitive because they are all dependent i.e. if targeted
+        # error is reduced the rest will give less probability because of the softmax relation
+        return - np.sum(y * np.log(a), axis=0, keepdims=True)
+
+    @staticmethod
+    def cross_entropy_loss_prime(y, a):
         return -y / a + (1 - y) / (1 - a)
+
+    @staticmethod
+    def softmax_loss_prime(y, a):
+        return -np.sum(y/a)
 
     @staticmethod
     def regularization_term(network, m, lmbda):
@@ -356,7 +397,7 @@ class Optimization:
         A = X
         for layer in network.layers:
             layer.A_l_1 = A  # this is A-1 from last loop step
-            Z = np.dot(layer.W, A) + layer.b
+            Z = np.dot(layer.W, A) + layer.b  # (called "logits" in ML folklore)
             A = layer.activation(Z)
 
             # NB! we don't not apply dropout to the input layer or output layer.
