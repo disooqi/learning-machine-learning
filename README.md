@@ -11,4 +11,6 @@ Implementations of different algorithms in Machine learning and Deep Learning fo
 * https://www.infoq.com/presentations/machine-learning-general-programming
 * http://www.r2d3.us/visual-intro-to-machine-learning-part-1/
 
+## Tips and Tricks
+* Regularization work well when we have a lot of features, each of which contributes a bit to predicting y.
 
