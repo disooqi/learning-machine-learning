@@ -12,8 +12,13 @@ Implementations of different algorithms in Machine learning and Deep Learning fo
 * http://www.r2d3.us/visual-intro-to-machine-learning-part-1/
 
 ## Tips and Tricks
+
+### Overfitting
 * You can solve overfitting by:
-* * Reduce number of features (either manually or by using Model Selection Algorithms), or
+  * Reduce number of features (either manually or by using Model Selection Algorithms), or
   * Regularization
+
+### Regularization
 * Regularization work well when we have a lot of features, each of which contributes a bit to predicting y.
+* It tries to obtain “Simpler” hypothesis, by reducing parameters values (theta), which will result in less prone to overfitting. 
 
